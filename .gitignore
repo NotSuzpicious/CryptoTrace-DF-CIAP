@@ -1,0 +1,55 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE
+.vscode/
+.idea/
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local/generated data
+data/processed/
+data/demo/
+
+# Generated reports
+reports/
+
+# Local model files
+models/*.joblib
+models/*.pkl
+
+# Environment/secrets
+.env
+.env.*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Raw cryptocurrency dataset
+txs_features.csv
+txs_classes.csv
+txs_edgelist.csv
+
+# Project archive
+*.zip
