@@ -14,6 +14,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QFo
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 
 from app.analysis.forensic_rules import ForensicRuleEngine
+from app.analysis.investigation import BlockchainInvestigator
+from app.analysis.forward_flow import ForwardFlowAnalyzer
+from app.blockchain.bitcoin_rpc import BitcoinRPC
 from app.analysis.preprocessing import LABEL_MEANINGS, load_raw_dataset, summarize_dataset
 from app.graph.graph_analysis import obfuscation_indicators
 from app.graph.graph_builder import TransactionGraph
@@ -78,6 +81,10 @@ class CryptoTraceWindow(QMainWindow):
         super().__init__(); self.setWindowTitle("CryptoTrace | Cryptocurrency Transaction Forensics"); self.resize(1280, 800)
         self.features = pd.DataFrame(); self.classes = pd.DataFrame(); self.edges = pd.DataFrame(); self.current = None
         self.model = ModelManager(ROOT / "models")
+
+        self.bitcoin_rpc = BitcoinRPC()
+        self.blockchain_investigator = BlockchainInvestigator()
+        self.forward_flow = ForwardFlowAnalyzer(self.bitcoin_rpc)
         try:
             self.features, self.classes, self.edges = load_raw_dataset(ROOT)
             train_path = ROOT / "data" / "processed" / "train_features.csv"
@@ -100,8 +107,33 @@ class CryptoTraceWindow(QMainWindow):
         page = QWidget(); layout = QVBoxLayout(page); heading = QLabel(title); heading.setObjectName("PageTitle"); layout.addWidget(heading); layout.addWidget(QLabel(subtitle)); return page, layout
 
     def _dashboard_page(self):
-        page, layout = self._page("Forensic Dashboard", "Local analytical overview. Model predictions and rules are investigative indicators, not legal conclusions.")
-        self.dashboard_grid = QGridLayout(); layout.addLayout(self.dashboard_grid); actions = QHBoxLayout(); demo = QPushButton("Run Demo Investigation"); demo.clicked.connect(self._load_demo); load = QPushButton("Load CSV"); load.clicked.connect(self._load_csv); actions.addWidget(demo); actions.addWidget(load); actions.addStretch(); layout.addLayout(actions); return page
+        page, layout = self._page(
+            "Forensic Dashboard",
+            "Local analytical overview. Model predictions and rules are investigative indicators, not legal conclusions.",
+        )
+
+        self.dashboard_grid = QGridLayout()
+        layout.addLayout(self.dashboard_grid)
+
+        actions = QHBoxLayout()
+
+        demo = QPushButton("Run Demo Investigation")
+        demo.clicked.connect(self._load_demo)
+
+        load = QPushButton("Load CSV")
+        load.clicked.connect(self._load_csv)
+
+        blockchain = QPushButton("Check Bitcoin Core")
+        blockchain.clicked.connect(self._check_bitcoin_core)
+
+        actions.addWidget(demo)
+        actions.addWidget(load)
+        actions.addWidget(blockchain)
+        actions.addStretch()
+
+        layout.addLayout(actions)
+
+        return page
 
     def _metric(self, label, value):
         box = QGroupBox(label); box.setMinimumHeight(80); v = QVBoxLayout(box); text = QLabel(str(value)); text.setObjectName("Metric"); v.addWidget(text); return box
@@ -116,8 +148,52 @@ class CryptoTraceWindow(QMainWindow):
         self.dashboard_grid.addWidget(self._metric("Class distribution", "1 illicit / 2 licit / 3 unknown"), 2, 0, 1, 3)
 
     def _investigation_page(self):
-        page, layout = self._page("Transaction Investigation", "Inspect features, model assessment, rule explanations, and risk level for one transaction.")
-        row = QHBoxLayout(); self.tx_input = QLineEdit(); self.tx_input.setPlaceholderText("Enter txId"); go = QPushButton("Investigate"); go.clicked.connect(self._investigate); row.addWidget(self.tx_input); row.addWidget(go); layout.addLayout(row); self.investigation_text = QPlainTextEdit(); self.investigation_text.setReadOnly(True); layout.addWidget(self.investigation_text); return page
+        page, layout = self._page(
+            "Transaction Investigation",
+            "Investigate Elliptic dataset transactions or acquire Bitcoin transaction evidence directly from Bitcoin Core.",
+        )
+
+        dataset_group = QGroupBox("Elliptic Dataset Investigation")
+        dataset_layout = QHBoxLayout(dataset_group)
+
+        self.tx_input = QLineEdit()
+        self.tx_input.setPlaceholderText("Enter numeric txId")
+
+        go = QPushButton("Investigate Dataset Transaction")
+        go.clicked.connect(self._investigate)
+
+        dataset_layout.addWidget(self.tx_input)
+        dataset_layout.addWidget(go)
+
+        layout.addWidget(dataset_group)
+
+        blockchain_group = QGroupBox("Bitcoin Core Investigation")
+        blockchain_layout = QGridLayout(blockchain_group)
+
+        self.bitcoin_txid_input = QLineEdit()
+        self.bitcoin_txid_input.setPlaceholderText("Enter Bitcoin TXID")
+
+        self.bitcoin_block_input = QLineEdit()
+        self.bitcoin_block_input.setPlaceholderText(
+            "Optional block hash (recommended for pruned nodes)"
+        )
+
+        bitcoin_go = QPushButton("Investigate Bitcoin Transaction")
+        bitcoin_go.clicked.connect(self._investigate_bitcoin_transaction)
+
+        blockchain_layout.addWidget(QLabel("Transaction ID"), 0, 0)
+        blockchain_layout.addWidget(self.bitcoin_txid_input, 0, 1)
+        blockchain_layout.addWidget(QLabel("Block Hash"), 1, 0)
+        blockchain_layout.addWidget(self.bitcoin_block_input, 1, 1)
+        blockchain_layout.addWidget(bitcoin_go, 2, 0, 1, 2)
+
+        layout.addWidget(blockchain_group)
+
+        self.investigation_text = QPlainTextEdit()
+        self.investigation_text.setReadOnly(True)
+        layout.addWidget(self.investigation_text)
+
+        return page
 
     def _network_page(self):
         page, layout = self._page("Network Analysis", "Bounded 1-3 hop directed transaction graph around the selected node."); row = QHBoxLayout(); self.hop = QSpinBox(); self.hop.setRange(1, 3); self.hop.setValue(1); button = QPushButton("Explore selected transaction"); button.clicked.connect(self._show_network); row.addWidget(QLabel("Hops")); row.addWidget(self.hop); row.addWidget(button); row.addStretch(); layout.addLayout(row); self.network_canvas = NetworkCanvas(); layout.addWidget(self.network_canvas); self.network_text = QPlainTextEdit(); self.network_text.setReadOnly(True); layout.addWidget(self.network_text); return page
@@ -136,6 +212,123 @@ class CryptoTraceWindow(QMainWindow):
 
     def _reports_page(self):
         page, layout = self._page("Reports", "Generate a local PDF containing the selected transaction analysis and explicit limitations."); button = QPushButton("Generate PDF forensic report"); button.clicked.connect(self._generate_report); layout.addWidget(button); self.report_text = QLabel("No report generated."); layout.addWidget(self.report_text); layout.addStretch(); return page
+
+    def _check_bitcoin_core(self):
+        try:
+            if not self.bitcoin_rpc.is_available():
+                self._error(
+                    "Bitcoin Core is not running or its RPC server is unavailable."
+                )
+                return
+
+            info = self.bitcoin_rpc.get_blockchain_info()
+
+            message = (
+                "Bitcoin Core connection: AVAILABLE\n\n"
+                f"Network: {info.get('chain', 'unknown')}\n"
+                f"Current block height: {info.get('blocks', 'unknown'):,}\n"
+                f"Header height: {info.get('headers', 'unknown'):,}\n"
+                f"Pruned node: {info.get('pruned', False)}\n"
+                f"Initial block download: {info.get('initialblockdownload', False)}"
+            )
+
+            QMessageBox.information(
+                self,
+                "Bitcoin Core Status",
+                message,
+            )
+
+        except Exception as exc:
+            self._error(f"Bitcoin Core check failed: {exc}")
+
+    def _investigate_bitcoin_transaction(self):
+        try:
+            txid = self.bitcoin_txid_input.text().strip()
+            block_hash = self.bitcoin_block_input.text().strip() or None
+
+            if not txid:
+                raise ValueError("Enter a Bitcoin transaction ID.")
+
+            if not self.bitcoin_rpc.is_available():
+                raise RuntimeError(
+                    "Bitcoin Core is not running or its RPC server is unavailable."
+                )
+
+            result = self.blockchain_investigator.investigate_transaction(
+                txid=txid,
+                block_hash=block_hash,
+            )
+
+            self.current = {
+                "bitcoin": True,
+                "tx_id": txid,
+                "block_hash": result.evidence.block_hash,
+                "evidence": result.evidence,
+                "summary": result.summary,
+                "details": result.details,
+                "indicators": result.indicators,
+            }
+
+            lines = [
+                "BITCOIN CORE FORENSIC INVESTIGATION",
+                "",
+                f"Transaction ID: {result.summary.txid}",
+                f"Coinbase transaction: {result.summary.is_coinbase}",
+                f"Block hash: {result.evidence.block_hash}",
+                f"Confirmations: {result.summary.confirmations}",
+                f"Block time: {result.summary.block_time}",
+                "",
+                "TRANSACTION SUMMARY",
+                f"Inputs: {result.summary.input_count}",
+                f"Outputs: {result.summary.output_count}",
+                f"Total output: {result.summary.total_output_btc:.8f} BTC",
+                f"Size: {result.summary.size} bytes",
+                f"Virtual size: {result.summary.virtual_size} vbytes",
+                f"Weight: {result.summary.weight}",
+                "",
+                "INPUTS",
+            ]
+
+            for index, item in enumerate(result.details.inputs, start=1):
+                lines.append(
+                    f"  Input {index}: "
+                    f"previous_txid={item.previous_txid}, "
+                    f"previous_vout={item.previous_vout}, "
+                    f"coinbase={item.is_coinbase}"
+                )
+
+            lines.append("")
+            lines.append("OUTPUTS")
+
+            for item in result.details.outputs:
+                lines.append(
+                    f"  Output {item.index}: "
+                    f"value={item.value_btc:.8f} BTC, "
+                    f"type={item.script_type}, "
+                    f"address={item.address}"
+                )
+
+            lines.append("")
+            lines.append("FORENSIC INDICATORS")
+
+            for indicator in result.indicators:
+                status = "[x]" if indicator.triggered else "[ ]"
+                lines.append(
+                    f"  {status} {indicator.name}: "
+                    f"{indicator.explanation}"
+                )
+
+            lines.append("")
+            lines.append(
+                "DISCLAIMER: These are analytical indicators only. "
+                "They do not establish criminal activity, identity, "
+                "ownership, or legal attribution."
+            )
+
+            self.investigation_text.setPlainText("\n".join(lines))
+
+        except Exception as exc:
+            self._error(str(exc))
 
     def _load_demo(self):
         path = ROOT / "data" / "demo" / "demo_transactions.csv"

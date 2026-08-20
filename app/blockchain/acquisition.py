@@ -20,11 +20,42 @@ class EvidenceAcquisition:
         if not txid:
             raise ValueError("Transaction ID cannot be empty.")
 
-        raw_transaction = self.rpc.get_raw_transaction(
-            txid,
-            verbose=True,
-            block_hash=block_hash,
-        )
+        try:
+            raw_transaction = self.rpc.get_raw_transaction(
+                txid,
+                verbose=True,
+                block_hash=block_hash,
+            )
+
+        except RuntimeError as exc:
+            if not block_hash:
+                raise
+
+            # Pruned-node fallback:
+            # retrieve the retained block and locate the full
+            # transaction object inside the block.
+            block = self.rpc.get_block(
+                block_hash,
+                verbosity=2,
+            )
+
+            transactions = block.get("tx", [])
+
+            raw_transaction = next(
+                (
+                    transaction
+                    for transaction in transactions
+                    if isinstance(transaction, dict)
+                    and transaction.get("txid") == txid
+                ),
+                None,
+            )
+
+            if raw_transaction is None:
+                raise RuntimeError(
+                    f"Transaction {txid} was not found in "
+                    f"block {block_hash}. Original RPC error: {exc}"
+                ) from exc
 
         if not isinstance(raw_transaction, dict):
             raise RuntimeError(
