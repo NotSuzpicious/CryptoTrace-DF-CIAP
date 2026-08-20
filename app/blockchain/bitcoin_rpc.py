@@ -55,3 +55,47 @@ class BitcoinRPC:
             raise RuntimeError("Unexpected response from Bitcoin Core.")
 
         return result
+
+    def get_block_hash(self, height: int) -> str:
+        result = self.call("getblockhash", height)
+
+        if not isinstance(result, str):
+            raise RuntimeError("Unexpected block hash response from Bitcoin Core.")
+
+        return result
+
+    def get_block(self, block_hash: str, verbosity: int = 2) -> dict[str, Any]:
+        result = self.call("getblock", block_hash, verbosity)
+
+        if not isinstance(result, dict):
+            raise RuntimeError("Unexpected block response from Bitcoin Core.")
+
+        return result
+
+    def get_raw_transaction(
+        self,
+        txid: str,
+        verbose: bool = True,
+        block_hash: str | None = None,
+    ) -> Any:
+        params: list[Any] = [txid, verbose]
+
+        if block_hash is not None:
+            params.append(block_hash)
+
+        return self.call("getrawtransaction", *params)
+
+    def decode_raw_transaction(self, raw_hex: str) -> dict[str, Any]:
+        result = self.call("decoderawtransaction", raw_hex)
+
+        if not isinstance(result, dict):
+            raise RuntimeError("Unexpected decoded transaction response from Bitcoin Core.")
+
+        return result
+
+    def is_available(self) -> bool:
+        try:
+            self.get_blockchain_info()
+            return True
+        except Exception:
+            return False
