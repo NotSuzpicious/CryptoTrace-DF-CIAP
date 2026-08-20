@@ -18,7 +18,7 @@ def main() -> None:
         )
 
     # Use block 100 and select its first transaction.
-    block_hash = rpc.get_block_hash(100)
+    block_hash = rpc.get_block_hash(170)
     block = rpc.get_block(block_hash, verbosity=2)
 
     transactions = block.get("tx", [])
@@ -26,11 +26,11 @@ def main() -> None:
     if not transactions:
         raise RuntimeError("Block 100 contains no transactions.")
 
-    txid = transactions[0]["txid"]
+    txid = transactions[1]["txid"]
 
     tracer = FundFlowTracer(rpc)
 
-    results = tracer.trace_backward(
+    results = tracer.trace_backward_from_block(
         txid=txid,
         block_hash=block_hash,
         max_depth=2,
