@@ -49,6 +49,24 @@ def main() -> None:
     print(f"Virtual size: {result.summary.virtual_size} vbytes")
     print(f"Weight: {result.summary.weight}")
 
+    print("\nTransaction Inputs:")
+    for index, item in enumerate(result.details.inputs, start=1):
+        print(
+            f"- Input {index}: "
+            f"previous_txid={item.previous_txid}, "
+            f"previous_vout={item.previous_vout}, "
+            f"coinbase={item.is_coinbase}"
+        )
+
+    print("\nTransaction Outputs:")
+    for item in result.details.outputs:
+        print(
+            f"- Output {item.index}: "
+            f"value={item.value_btc:.8f} BTC, "
+            f"type={item.script_type}, "
+            f"address={item.address}"
+        )
+
     print("\nForensic Indicators:")
 
     for indicator in result.indicators:
