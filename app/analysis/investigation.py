@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.analysis.blockchain_rules import BlockchainIndicator, BlockchainRuleEngine
+from app.analysis.transaction_details import (
+    TransactionDetails,
+    extract_transaction_details,
+)
 from app.analysis.transaction_examiner import TransactionSummary, examine_transaction
 from app.blockchain.acquisition import EvidenceAcquisition
 from app.blockchain.evidence import TransactionEvidence
@@ -12,13 +16,14 @@ from app.blockchain.evidence import TransactionEvidence
 class InvestigationResult:
     evidence: TransactionEvidence
     summary: TransactionSummary
+    details: TransactionDetails
     indicators: list[BlockchainIndicator]
 
 
 class BlockchainInvestigator:
     """
     Coordinates blockchain evidence acquisition, examination,
-    and rule-based forensic analysis.
+    detailed transaction parsing, and rule-based forensic analysis.
     """
 
     def __init__(
@@ -42,10 +47,13 @@ class BlockchainInvestigator:
 
         summary = examine_transaction(evidence)
 
+        details = extract_transaction_details(evidence)
+
         indicators = self.rule_engine.analyze(summary)
 
         return InvestigationResult(
             evidence=evidence,
             summary=summary,
+            details=details,
             indicators=indicators,
         )
