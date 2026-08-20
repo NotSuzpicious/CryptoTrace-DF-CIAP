@@ -22,6 +22,10 @@ class FundFlowTracer:
     txindex. It uses getblock(..., verbosity=3) so that input prevout metadata
     can be examined directly.
 
+    If historical blocks required for deeper tracing have already been pruned,
+    the tracer returns the partial flow discovered so far instead of failing
+    the entire investigation.
+
     The tracer does not infer ownership, identity, or criminal attribution.
     """
 
@@ -49,10 +53,15 @@ class FundFlowTracer:
 
             visited.add(current_txid)
 
-            block = self.rpc.get_block(
-                current_block_hash,
-                verbosity=3,
-            )
+            try:
+                block = self.rpc.get_block(
+                    current_block_hash,
+                    verbosity=3,
+                )
+            except RuntimeError:
+                # The block may have been pruned. Stop this branch while
+                # preserving any flow nodes already discovered.
+                return
 
             transactions = block.get("tx", [])
 
@@ -96,15 +105,21 @@ class FundFlowTracer:
                     previous_height is not None
                     and depth < max_depth
                 ):
-                    previous_block_hash = self.rpc.get_block_hash(
-                        int(previous_height)
-                    )
+                    try:
+                        previous_block_hash = self.rpc.get_block_hash(
+                            int(previous_height)
+                        )
 
-                    walk(
-                        current_txid=previous_txid,
-                        current_block_hash=previous_block_hash,
-                        depth=depth + 1,
-                    )
+                        walk(
+                            current_txid=previous_txid,
+                            current_block_hash=previous_block_hash,
+                            depth=depth + 1,
+                        )
+
+                    except RuntimeError:
+                        # The previous block may no longer be available
+                        # because the Bitcoin Core node is pruned.
+                        continue
 
         walk(
             current_txid=txid.strip(),

@@ -16,6 +16,7 @@ from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from app.analysis.forensic_rules import ForensicRuleEngine
 from app.analysis.investigation import BlockchainInvestigator
 from app.analysis.forward_flow import ForwardFlowAnalyzer
+from app.analysis.fund_flow import FundFlowTracer
 from app.blockchain.bitcoin_rpc import BitcoinRPC
 from app.analysis.preprocessing import LABEL_MEANINGS, load_raw_dataset, summarize_dataset
 from app.graph.graph_analysis import obfuscation_indicators
@@ -85,6 +86,7 @@ class CryptoTraceWindow(QMainWindow):
         self.bitcoin_rpc = BitcoinRPC()
         self.blockchain_investigator = BlockchainInvestigator()
         self.forward_flow = ForwardFlowAnalyzer(self.bitcoin_rpc)
+        self.fund_flow = FundFlowTracer(self.bitcoin_rpc)
         try:
             self.features, self.classes, self.edges = load_raw_dataset(ROOT)
             train_path = ROOT / "data" / "processed" / "train_features.csv"
@@ -180,12 +182,15 @@ class CryptoTraceWindow(QMainWindow):
 
         bitcoin_go = QPushButton("Investigate Bitcoin Transaction")
         bitcoin_go.clicked.connect(self._investigate_bitcoin_transaction)
+        fund_flow_go = QPushButton("Trace Backward Fund Flow")
+        fund_flow_go.clicked.connect(self._trace_backward_fund_flow)
 
         blockchain_layout.addWidget(QLabel("Transaction ID"), 0, 0)
         blockchain_layout.addWidget(self.bitcoin_txid_input, 0, 1)
         blockchain_layout.addWidget(QLabel("Block Hash"), 1, 0)
         blockchain_layout.addWidget(self.bitcoin_block_input, 1, 1)
         blockchain_layout.addWidget(bitcoin_go, 2, 0, 1, 2)
+        blockchain_layout.addWidget(fund_flow_go, 3, 0, 1, 2)
 
         layout.addWidget(blockchain_group)
 
@@ -326,6 +331,86 @@ class CryptoTraceWindow(QMainWindow):
             )
 
             self.investigation_text.setPlainText("\n".join(lines))
+
+        except Exception as exc:
+            self._error(str(exc))
+
+    def _trace_backward_fund_flow(self):
+        try:
+            txid = self.bitcoin_txid_input.text().strip()
+            block_hash = self.bitcoin_block_input.text().strip()
+
+            if not txid:
+                raise ValueError("Enter a Bitcoin transaction ID.")
+
+            if not block_hash:
+                raise ValueError(
+                    "Enter the block hash for the transaction. "
+                    "A block hash is required for pruned-node fund-flow tracing."
+                )
+
+            if not self.bitcoin_rpc.is_available():
+                raise RuntimeError(
+                    "Bitcoin Core is not running or its RPC server is unavailable."
+                )
+
+            results = self.fund_flow.trace_backward_from_block(
+                txid=txid,
+                block_hash=block_hash,
+                max_depth=2,
+            )
+
+            lines = [
+                "BITCOIN BACKWARD FUND FLOW",
+                "",
+                f"Starting transaction: {txid}",
+                f"Block hash: {block_hash}",
+                "Maximum depth: 2",
+                "",
+            ]
+
+            if not results:
+                lines.append(
+                    "No previous transactions found."
+                )
+                lines.append(
+                    "This may occur for a coinbase transaction, "
+                    "or when previous transaction metadata is unavailable."
+                )
+            else:
+                lines.append("PREVIOUS TRANSACTIONS")
+
+                for node in results:
+                    value = (
+                        f"{node.value_btc:.8f} BTC"
+                        if node.value_btc is not None
+                        else "unknown value"
+                    )
+
+                    height = (
+                        str(node.block_height)
+                        if node.block_height is not None
+                        else "unknown height"
+                    )
+
+                    lines.append(
+                        f"- depth={node.depth}, "
+                        f"direction={node.direction}, "
+                        f"txid={node.txid}, "
+                        f"block_height={height}, "
+                        f"value={value}"
+                    )
+
+            lines.append("")
+            lines.append(
+                "DISCLAIMER: Fund-flow tracing shows transaction "
+                "relationships only. It does not establish ownership, "
+                "identity, criminal activity, or legal attribution."
+            )
+
+            self.investigation_text.setPlainText(
+                "\n".join(lines)
+            )
 
         except Exception as exc:
             self._error(str(exc))
