@@ -7,6 +7,7 @@ from typing import Any
 @dataclass
 class TransactionEvidence:
     txid: str
+    is_coinbase: bool
     block_hash: str | None
     confirmations: int | None
     block_time: int | None
@@ -22,6 +23,11 @@ class TransactionEvidence:
 def transaction_from_rpc(data: dict[str, Any]) -> TransactionEvidence:
     return TransactionEvidence(
         txid=str(data.get("txid", "")),
+        is_coinbase=bool(
+            data.get("vin")
+            and isinstance(data["vin"], list)
+            and "coinbase" in data["vin"][0]
+        ),
         block_hash=data.get("blockhash"),
         confirmations=data.get("confirmations"),
         block_time=data.get("blocktime"),

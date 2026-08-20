@@ -8,6 +8,7 @@ from app.blockchain.evidence import TransactionEvidence
 @dataclass
 class TransactionSummary:
     txid: str
+    is_coinbase: bool
     input_count: int
     output_count: int
     total_output_btc: float
@@ -30,6 +31,7 @@ def examine_transaction(evidence: TransactionEvidence) -> TransactionSummary:
 
     return TransactionSummary(
         txid=evidence.txid,
+        is_coinbase=evidence.is_coinbase,
         input_count=len(evidence.inputs),
         output_count=len(evidence.outputs),
         total_output_btc=total_output_btc,

@@ -39,6 +39,7 @@ def main() -> None:
 
     print("\n=== CRYPTOTRACE FORENSIC INVESTIGATION TEST ===")
     print(f"Transaction ID: {result.summary.txid}")
+    print(f"Coinbase: {result.summary.is_coinbase}")
     print(f"Block hash: {result.evidence.block_hash}")
     print(f"Confirmations: {result.summary.confirmations}")
     print(f"Inputs: {result.summary.input_count}")
