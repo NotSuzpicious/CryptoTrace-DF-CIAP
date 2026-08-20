@@ -24,7 +24,7 @@ class BitcoinRPC:
             str(self.cli_path),
             f"-datadir={self.data_dir}",
             method,
-            *[str(param) for param in params],
+            *[json.dumps(param) if isinstance(param, (bool, dict, list)) or param is None else str(param) for param in params],
         ]
 
         result = subprocess.run(
