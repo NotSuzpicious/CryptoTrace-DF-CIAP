@@ -343,15 +343,15 @@ class CryptoTraceWindow(QMainWindow):
             if not txid:
                 raise ValueError("Enter a Bitcoin transaction ID.")
 
-            if not block_hash:
-                raise ValueError(
-                    "Enter the block hash for the transaction. "
-                    "A block hash is required for pruned-node fund-flow tracing."
-                )
+            # A block hash is only required when the transaction has not
+            # already been preserved in the local evidence database.
+            stored = self.fund_flow.evidence_store.get_transaction(txid)
 
-            if not self.bitcoin_rpc.is_available():
-                raise RuntimeError(
-                    "Bitcoin Core is not running or its RPC server is unavailable."
+            if stored is None and not block_hash:
+                raise ValueError(
+                    "This transaction is not present in the local evidence "
+                    "database. Enter its block hash so Bitcoin Core can be "
+                    "used as the acquisition source."
                 )
 
             results = self.fund_flow.trace_backward_from_block(
@@ -364,10 +364,16 @@ class CryptoTraceWindow(QMainWindow):
                 "BITCOIN BACKWARD FUND FLOW",
                 "",
                 f"Starting transaction: {txid}",
-                f"Block hash: {block_hash}",
+                f"Block hash: {block_hash or stored['transaction'].get('block_hash', 'Local evidence') if stored else block_hash}",
                 "Maximum depth: 2",
                 "",
             ]
+
+            if stored is not None:
+                lines.insert(
+                    3,
+                    "Evidence source: Local preserved evidence",
+                )
 
             if not results:
                 lines.append(
