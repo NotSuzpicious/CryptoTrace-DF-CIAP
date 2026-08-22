@@ -53,3 +53,5 @@ txs_edgelist.csv
 
 # Project archive
 *.zip
+
+data/blockchain_evidence.db
